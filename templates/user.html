@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %} User {% endblock title %}
+
+{% block content %}
+
+{% with messages = get_flashed_messages() %}
+    {% if messages %}
+        {% for msg in messages %}
+            <p style="color:red;">{{ msg }}</p>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<p>Welcome {{ user }}</p>
+
+<form method="POST">
+    <input type="email" name="email" placeholder="ENTER EMAIL" value="{{email if email}}"/>
+    <input type="submit" value="submit"/>
+</form>
+
+
+{% endblock %}

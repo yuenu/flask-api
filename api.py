@@ -1,92 +1,95 @@
-from flask import jsonify, Flask
-from bs4 import BeautifulSoup
-from PIL import Image
-import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r'.\Tesseract-OCR\tesseract.exe'
+from flask import Flask, redirect, url_for, render_template,request, session, flash
+from datetime import timedelta
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-app.config["DEBUG"] = True
+app.secret_key = b'_5#y2L"/F4wsa7dqwQ8z\n\xaec]/'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.sqlite3'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.permanent_session_lifetime = timedelta(minutes=5)
 
-# test data
-tpe = {
-    "id": 0,
-    "city_name": "Taipei",
-    "country_name": "Taiwan",
-    "is_capital": True,
-    "location": {
-        "longitude": 121.569649,
-        "latitude": 25.036786
-    }
-}
-nyc = {
-    "id": 1,
-    "city_name": "New York",
-    "country_name": "United States",
-    "is_capital": False,
-    "location": {
-        "longitude": -74.004364,
-        "latitude": 40.710405
-    }
-}
-ldn = {
-    "id": 2,
-    "city_name": "London",
-    "country_name": "United Kingdom",
-    "is_capital": True,
-    "location": {
-        "longitude": -0.114089,
-        "latitude": 51.507497
-    }
-}
-cities = [tpe, nyc, ldn]
+db = SQLAlchemy(app)
 
-def idenitfy_img(img):
-	# Thresh_binary
-	def convert_img(img,threshold):
-		img = img.convert("L")
-		pixels = img.load()
-		for x in range(img.width): 
-			for y in range(img.height): 
-				if pixels[x, y] > threshold: 
-					pixels[x, y] = 255
-				else:
-					pixels[x, y] = 0
-		return img
+class users(db.Model):
+	_id = db.Column("id", db.Integer, primary_key=True)
+	name = db.Column(db.String(100))
+	email = db.Column(db.String(100))
 
-	# Convert image to gray, direct tesseract and get value to fourth digits
-	captcha = Image.open(img)
-	Gray_captcha = captcha.convert('L')
-	result = pytesseract.image_to_string(Gray_captcha, config='--psm 13 --oem 3 -c tessedit_char_whitelist=0123456789')[:4]
-	if len(result) > 3:
-		pass
-	# If not get 4 digits, then change threshold to get cleand img until idenitfy 4 digits
-	else :
-		threshold = 165
-		thresh = convert_img(captcha, threshold)
-		result = pytesseract.image_to_string(thresh, config='--psm 13 --oem 1 -c tessedit_char_whitelist=0123456789')          
-		for i in range(75):
-			if len(result) < 4:
-				threshold = threshold-1
-				thresh = convert_img(captcha, threshold)
-				result = pytesseract.image_to_string(thresh, config='--psm 13 --oem 1 -c tessedit_char_whitelist=0123456789')[:4]
-	return result
+	def __init__(self, name, email):
+		self.name = name
+		self.email = email
 
 
-
-
-@app.route('/', methods=['GET'])
+@app.route("/", methods=['GET'])
 def home():
-	return "<h1>Hello Flask</h1>"
+	return render_template("index.html")
+
+@app.route("/view")
+def view():
+	return render_template("view.html", values=users.query.all())
+
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+	if request.method == "POST":
+		session.permanent = True
+		user = request.form["nm"]
+		session["user"] = user
+
+		found_user = users.query.filter_by(name=user).first()
+		if found_user:
+			session["email"] = found_user.email
+		else:
+			usr = users(user, "")
+			db.session.add(usr)
+			db.session.commit()
 
 
-@app.route('/data/', methods=['GET'])
-def data():
-	return jsonify(cities)
+		flash('You were successfully logged in', "success")
+		return redirect(url_for("user"))
+	else:
+		if "user" in session:
+			flash("Already logged in")
+			return redirect(url_for("user"))
+		return render_template("login.html")
 
+@app.route("/user", methods=["POST", "GET"])
+def user():
+	email = None
+	if "user" in session:
+		user = session["user"]
+		
+		if request.method == "POST":
+			email = request.form["email"]
+			session["email"]= email
+			found_user = users.query.filter_by(name=user).first()
+			found_user.email = email
+			db.session.commit()
+			flash("Email was saved!!")
+		else:
+			if "email" in session:
+				email = session["email"]
 
-@app.route('/captcha/', methods=['POST'])
-def captcha():
-	return idenitfy_img('./captcha/0.png')
+		return render_template("user.html", user=user, email=email)
+	else:
+		return redirect(url_for("login"))
 
+@app.route("/logout")
+def logout():
+	if "user" in session:
+		user = session["user"]
+		flash(f"You have benn logout, {user}", "info")
+	session.pop("user", None)
+	session.pop("email", None)
+	return redirect(url_for("login"))
 
-app.run()
+# @app.route('/<name>', methods=['GET'])
+# def user(name):
+# 	return f'Hello {name}'
+
+# @app.route('/admin')
+# def admin():
+# 	return redirect(url_for("home"))
+
+if __name__ == '__main__':
+	db.create_all()
+	app.run(debug=True)
